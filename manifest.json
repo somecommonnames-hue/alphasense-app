@@ -1,0 +1,17 @@
+{
+  "name": "AlphaSense: India Stock AI",
+  "short_name": "AlphaSense",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "description": "Professional AI Stock Screener for Indian Markets",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://cdn.lucide.dev/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
