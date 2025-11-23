@@ -3,20 +3,26 @@ export interface StockData {
   name: string;
   sector: string;
   currentPrice: number;
-  targetPrice: number;
+  targetPrice: number; // Used as "Projected Target" in analysis, or "Current Value" placeholder
   stopLoss: number;
   timeFrame: string;
   rationale: string;
   ema?: string;
   superTrend?: string;
-  pegRatio?: number;
-  debtToEquity?: number;
-  rsi?: number;
-  volumeAction?: string;
-  buyAlert?: number;
-  technicalTrigger?: string;
-  entryPrice?: number;
-  returnPercentage?: number;
+  
+  // New Auditor Metrics
+  pegRatio?: number;      // Fundamental: Value < 1.5 is ideal
+  debtToEquity?: number;  // Fundamental: Safety check
+  rsi?: number;           // Technical: Momentum check (0-100)
+  volumeAction?: string;  // Technical: e.g., "2x Avg Volume"
+
+  // Alerts
+  buyAlert?: number;          // Fundamental: "Buy if price drops to..."
+  technicalTrigger?: string;  // Technical: "Alert if Volume > X" or "Alert if crosses Y"
+
+  // Backtest specific fields
+  entryPrice?: number; // Price at the start of the backtest period
+  returnPercentage?: number; // Realized return
 }
 
 export enum AnalysisType {
