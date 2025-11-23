@@ -1,274 +1,265 @@
-{\rtf1\ansi\ansicpg1252\cocoartf2867
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
-{\colortbl;\red255\green255\blue255;}
-{\*\expandedcolortbl;;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww37660\viewh18260\viewkind0
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+import { GoogleGenAI } from "@google/genai";
+import { StockData, AnalysisResult, AnalysisType, BacktestStrategy } from "../types";
 
-\f0\fs24 \cf0 \
-import \{ GoogleGenAI \} from "@google/genai";\
-import \{ StockData, AnalysisResult, AnalysisType, BacktestStrategy \} from "../types";\
-\
-const MACRO_CONTEXT_INSTRUCTION = `\
-**PHASE 1: MACRO-ECONOMIC & GEOPOLITICAL SCAN (CRITICAL)**\
-Before selecting ANY stocks, you must search for and analyze the current Global & Indian Market Context:\
-1. **Geopolitics**: Are there active wars (e.g., Middle East, Ukraine) impacting Oil or Supply Chains?\
-2. **Economy**: Check US Bond Yields, Dollar Index (DXY), and Indian Inflation/Rate Cut expectations.\
-3. **Sector News**: Is there an AI boom? EV policy change? Defence spending hike?\
-4. **Sentiment**: Is the market Fearful or Greedy?\
-\
-*Constraint*: If the market is Bearish/Volatile, prioritize Defensive Low-Beta stocks. If Bullish, prioritize High-Beta Growth.*\
-`;\
-\
-const FUNDAMENTAL_PROMPT = `\
-Act as a Ruthless Financial Auditor and Hedge Fund Manager for the Indian Stock Market.\
-Perform a rigorous "Nifty 200" screening to identify the TOP 10 High-Conviction Investment Grade stocks.\
-\
-$\{MACRO_CONTEXT_INSTRUCTION\}\
-\
-**PHASE 2: STOCK SCREENING**\
-**AUDIT OBJECTIVE**: Maximize Safety Margin and Growth Potential. Eliminate value traps.\
-\
-**STRICT FILTERS (The Auditor's Checklist):**\
-1.  **Valuation Check**: PEG Ratio (Price/Earnings to Growth) MUST be < 2.0 (Preferably < 1.5). Do not recommend overhyped stocks.\
-2.  **Solvency Check**: Debt-to-Equity Ratio MUST be < 1.0 (or justifyingly low for capital intensive sectors).\
-3.  **Quality Check**: ROE & ROCE > 15% consistently for 3 years.\
-4.  **Governance**: Avoid companies with high promoter pledging.\
-5.  **Scope**: Scan the entire Nifty 200 (Large & Midcaps).\
-\
-Requirements:\
-1.  Provide a sharp, executive summary of the Macro Environment and why these specific stocks pass the audit in this context.\
-2.  **MANDATORY**: Use Google Search to find the LATEST REAL-TIME price.\
-3.  **ALERTS**: Determine a specific "Safe Buy Price" (BuyAlert) slightly below current market price for accumulation.\
-\
-CSV Format:\
-\\`\\`\\`csv\
-Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,PEGRatio,DebtToEquity,BuyAlert,Rationale\
-\\`\\`\\`\
-- Symbol: NSE Symbol.\
-- Name: Company Name.\
-- Sector: Industry Sector.\
-- CurrentPrice: Exact Latest Market Price (INR).\
-- TargetPrice: Conservative target in 3-5 years.\
-- StopLoss: 0 (for long term).\
-- TimeFrame: e.g., "3-5 Years".\
-- PEGRatio: The PEG ratio value (e.g., 1.2).\
-- DebtToEquity: The D/E ratio value (e.g., 0.4).\
-- BuyAlert: A specific price level to set an alert for accumulation (e.g. 5% lower).\
-- Rationale: Audit Note explaining selection AND Macro relevance.\
-`;\
-\
-const TECHNICAL_PROMPT = `\
-Act as a Precision Technical Auditor for Indian Markets.\
-Filter the "Nifty 200" for the TOP 10 High-Probability Swing Trades.\
-We are looking for **Sniper Entries**, not general trends.\
-\
-$\{MACRO_CONTEXT_INSTRUCTION\}\
-\
-**PHASE 2: TECHNICAL SCREENING**\
-**AUDIT OBJECTIVE**: High Risk:Reward (> 1:3) and confirmed momentum.\
-\
-**STRICT FILTERS (The Auditor's Checklist):**\
-1.  **Momentum**: RSI (14-Day) must be in the "Sweet Spot" (50 to 70). Avoid > 80 (Overbought) unless in "Super Momentum".\
-2.  **Volume Confirmation**: Price moves MUST be backed by Volume > 1.5x the 20-day average.\
-3.  **Structure**: Clean Breakouts, Re-tests of support, or 20 EMA bounces.\
-4.  **Trend**: Stock must be outperforming Nifty 50 Index relative strength.\
-\
-Requirements:\
-1.  Provide a technical market health check summary based on Global Cues.\
-2.  **CRITICAL**: Use Google Search to verify EXACT LAST CLOSING PRICE.\
-3.  **ALERTS**: Define a specific "Technical Trigger" to watch (e.g. "Alert if Vol > 5M" or "Alert if crosses 1250").\
-\
-CSV Format:\
-\\`\\`\\`csv\
-Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,RSI,VolumeAction,TechnicalTrigger,Rationale\
-\\`\\`\\`\
-- Symbol: NSE Symbol.\
-- Name: Company Name.\
-- Sector: Industry Sector.\
-- CurrentPrice: Exact Latest Close (INR).\
-- TargetPrice: Technical Target.\
-- StopLoss: Strict Stop Loss level.\
-- TimeFrame: e.g., "2-4 Weeks".\
-- RSI: Current RSI Value (e.g., 62.5).\
-- VolumeAction: e.g., "High Vol Breakout", "2x Avg Vol".\
-- TechnicalTrigger: Short text describing the specific alert condition.\
-- Rationale: The precise technical trigger.\
-`;\
-\
-const getBacktestPrompt = (period: string, strategy: BacktestStrategy) => \{\
-  const criteria = strategy === BacktestStrategy.FUNDAMENTAL\
-    ? `Criteria (Audited):\
-       1. **Undervalued Growth**: PEG Ratio was attractive (< 1.5) exactly $\{period\} ago.\
-       2. **Clean Balance Sheet**: Low Debt-to-Equity at that time.\
-       3. **Earnings Quality**: Was showing consistent quarterly profit growth.`\
-    : `Criteria (Audited):\
-       1. **Volume Breakouts**: Stocks that showed massive volume spikes exactly $\{period\} ago.\
-       2. **RSI Setup**: RSI was crossing 50 or 60 with strength.\
-       3. **Pattern**: Clean chart patterns (Cup & Handle, Triangle) visible $\{period\} ago.`;\
-\
-  return `\
-Act as a Financial Auditor performing a $\{strategy\} BACKTEST.\
-Simulate that we are exactly $\{period\} in the past.\
-Identify 5-8 Indian stocks from the **Nifty 200** universe that met the STRICT AUDIT CRITERIA exactly $\{period\} ago.\
-\
-**IMPORTANT**: Do not restrict selection to just the top 50 market cap companies. Scan Nifty 200.\
-\
-$\{criteria\}\
-\
-Requirements:\
-1. **SEARCH TASK 1**: Find the historical closing price of these stocks on a date exactly $\{period\} ago (Entry Price).\
-2. **SEARCH TASK 2**: Find the CURRENT real-time price of these stocks today (Current Price).\
-3. Calculate the Absolute Return % ((Current - Past) / Past * 100).\
-\
-CSV Format:\
-\\`\\`\\`csv\
-Symbol,Name,Sector,EntryPrice,CurrentPrice,ReturnPercent,TimeFrame,Rationale\
-\\`\\`\\`\
-- Symbol: NSE Symbol.\
-- Name: Company Name.\
-- Sector: Sector.\
-- EntryPrice: The historical price $\{period\} ago (INR).\
-- CurrentPrice: Today's price (INR).\
-- ReturnPercent: The calculated percentage growth (or loss).\
-- TimeFrame: "$\{period\}".\
-- Rationale: Why it passed the audit $\{period\} ago.\
-`;\
-\};\
-\
-const parseCSVLine = (line: string): string[] => \{\
-  const result: string[] = [];\
-  let current = '';\
-  let inQuotes = false;\
-  \
-  for (let i = 0; i < line.length; i++) \{\
-    const char = line[i];\
-    if (char === '"') \{\
-      inQuotes = !inQuotes;\
-    \} else if (char === ',' && !inQuotes) \{\
-      result.push(current.trim());\
-      current = '';\
-    \} else \{\
-      current += char;\
-    \}\
-  \}\
-  result.push(current.trim());\
-  return result.map(field => field.replace(/^"|"$/g, '').trim());\
-\};\
-\
-export const analyzeStocks = async (\
-  type: AnalysisType, \
-  backtestPeriod?: string,\
-  backtestStrategy?: BacktestStrategy\
-): Promise<AnalysisResult> => \{\
-  if (!process.env.API_KEY) \{\
-    throw new Error("API Key is missing.");\
-  \}\
-\
-  const ai = new GoogleGenAI(\{ apiKey: process.env.API_KEY \});\
-  \
-  let prompt = '';\
-  if (type === AnalysisType.FUNDAMENTAL) prompt = FUNDAMENTAL_PROMPT;\
-  else if (type === AnalysisType.TECHNICAL) prompt = TECHNICAL_PROMPT;\
-  else if (type === AnalysisType.BACKTEST && backtestPeriod && backtestStrategy) \{\
-    prompt = getBacktestPrompt(backtestPeriod, backtestStrategy);\
-  \}\
-  else throw new Error("Invalid analysis configuration");\
-\
-  try \{\
-    const response = await ai.models.generateContent(\{\
-      model: "gemini-2.5-flash",\
-      contents: prompt,\
-      config: \{\
-        tools: [\{ googleSearch: \{\} \}],\
-        temperature: 0.2, // Lower temperature for more rigorous/factual "Audit" behavior\
-      \},\
-    \});\
-\
-    const text = response.text || "No analysis generated.";\
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];\
-    \
-    // Extract sources\
-    const sources = groundingChunks\
-      .filter((chunk: any) => chunk.web && chunk.web.uri && chunk.web.title)\
-      .map((chunk: any) => (\{ uri: chunk.web.uri, title: chunk.web.title \}));\
-\
-    // Parse CSV block\
-    const stocks: StockData[] = [];\
-    const csvMatch = text.match(/```csv\\n([\\s\\S]*?)\\n```/);\
-\
-    if (csvMatch && csvMatch[1]) \{\
-      const rows = csvMatch[1].trim().split('\\n');\
-      // Skip header row\
-      for (let i = 1; i < rows.length; i++) \{\
-        const cols = parseCSVLine(rows[i]);\
-\
-        if (type === AnalysisType.TECHNICAL) \{\
-          // Technical Audit CSV: Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,RSI,VolumeAction,TechnicalTrigger,Rationale\
-          if (cols.length >= 10) \{\
-             stocks.push(\{\
-              symbol: cols[0] || "UNKNOWN",\
-              name: cols[1] || "Unknown",\
-              sector: cols[2] || "General",\
-              currentPrice: parseFloat(cols[3].replace(/[^\\d.-]/g, '')) || 0,\
-              targetPrice: parseFloat(cols[4].replace(/[^\\d.-]/g, '')) || 0,\
-              stopLoss: parseFloat(cols[5].replace(/[^\\d.-]/g, '')) || 0,\
-              timeFrame: cols[6] || "Unknown",\
-              rsi: parseFloat(cols[7].replace(/[^\\d.-]/g, '')) || 0,\
-              volumeAction: cols[8] || "-",\
-              technicalTrigger: cols[9] || "Watch Price",\
-              rationale: cols[10] || "Recommended",\
-            \});\
-          \}\
-        \} else if (type === AnalysisType.BACKTEST) \{\
-            // Backtest: Symbol,Name,Sector,EntryPrice,CurrentPrice,ReturnPercent,TimeFrame,Rationale\
-            if (cols.length >= 7) \{\
-                stocks.push(\{\
-                  symbol: cols[0] || "UNKNOWN",\
-                  name: cols[1] || "Unknown",\
-                  sector: cols[2] || "General",\
-                  currentPrice: parseFloat(cols[4].replace(/[^\\d.-]/g, '')) || 0,\
-                  entryPrice: parseFloat(cols[3].replace(/[^\\d.-]/g, '')) || 0,\
-                  targetPrice: 0, \
-                  returnPercentage: parseFloat(cols[5].replace(/[^\\d.-]/g, '')) || 0,\
-                  stopLoss: 0,\
-                  timeFrame: cols[6] || backtestPeriod || "Past",\
-                  rationale: cols[7] || "Backtest result",\
-                \});\
-            \}\
-        \} else \{\
-          // Fundamental Audit CSV: Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,PEGRatio,DebtToEquity,BuyAlert,Rationale\
-          if (cols.length >= 10) \{\
-              stocks.push(\{\
-                symbol: cols[0] || "UNKNOWN",\
-                name: cols[1] || "Unknown",\
-                sector: cols[2] || "General",\
-                currentPrice: parseFloat(cols[3].replace(/[^\\d.-]/g, '')) || 0,\
-                targetPrice: parseFloat(cols[4].replace(/[^\\d.-]/g, '')) || 0,\
-                stopLoss: parseFloat(cols[5].replace(/[^\\d.-]/g, '')) || 0,\
-                timeFrame: cols[6] || "Unknown",\
-                pegRatio: parseFloat(cols[7].replace(/[^\\d.-]/g, '')) || 0,\
-                debtToEquity: parseFloat(cols[8].replace(/[^\\d.-]/g, '')) || 0,\
-                buyAlert: parseFloat(cols[9].replace(/[^\\d.-]/g, '')) || 0,\
-                rationale: cols[10] || "Recommended",\
-              \});\
-          \}\
-        \}\
-      \}\
-    \}\
-\
-    return \{\
-      type,\
-      summary: text.replace(/```csv[\\s\\S]*```/, '').trim(),\
-      stocks,\
-      sources,\
-      backtestPeriod,\
-      backtestStrategy\
-    \};\
-\
-  \} catch (error) \{\
-    console.error("Gemini Analysis Error:", error);\
-    throw error;\
-  \}\
-\};\
-}
+const MACRO_CONTEXT_INSTRUCTION = `
+**PHASE 1: MACRO-ECONOMIC & GEOPOLITICAL SCAN (CRITICAL)**
+Before selecting ANY stocks, you must search for and analyze the current Global & Indian Market Context:
+1. **Geopolitics**: Are there active wars (e.g., Middle East, Ukraine) impacting Oil or Supply Chains?
+2. **Economy**: Check US Bond Yields, Dollar Index (DXY), and Indian Inflation/Rate Cut expectations.
+3. **Sector News**: Is there an AI boom? EV policy change? Defence spending hike?
+4. **Sentiment**: Is the market Fearful or Greedy?
+
+*Constraint*: If the market is Bearish/Volatile, prioritize Defensive Low-Beta stocks. If Bullish, prioritize High-Beta Growth.*
+`;
+
+const FUNDAMENTAL_PROMPT = `
+Act as a Ruthless Financial Auditor and Hedge Fund Manager for the Indian Stock Market.
+Perform a rigorous "Nifty 200" screening to identify the TOP 10 High-Conviction Investment Grade stocks.
+
+${MACRO_CONTEXT_INSTRUCTION}
+
+**PHASE 2: STOCK SCREENING**
+**AUDIT OBJECTIVE**: Maximize Safety Margin and Growth Potential. Eliminate value traps.
+
+**STRICT FILTERS (The Auditor's Checklist):**
+1.  **Valuation Check**: PEG Ratio (Price/Earnings to Growth) MUST be < 2.0 (Preferably < 1.5). Do not recommend overhyped stocks.
+2.  **Solvency Check**: Debt-to-Equity Ratio MUST be < 1.0 (or justifyingly low for capital intensive sectors).
+3.  **Quality Check**: ROE & ROCE > 15% consistently for 3 years.
+4.  **Governance**: Avoid companies with high promoter pledging.
+5.  **Scope**: Scan the entire Nifty 200 (Large & Midcaps).
+
+Requirements:
+1.  Provide a sharp, executive summary of the Macro Environment and why these specific stocks pass the audit in this context.
+2.  **MANDATORY**: Use Google Search to find the LATEST REAL-TIME price.
+3.  **ALERTS**: Determine a specific "Safe Buy Price" (BuyAlert) slightly below current market price for accumulation.
+
+CSV Format:
+\`\`\`csv
+Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,PEGRatio,DebtToEquity,BuyAlert,Rationale
+\`\`\`
+- Symbol: NSE Symbol.
+- Name: Company Name.
+- Sector: Industry Sector.
+- CurrentPrice: Exact Latest Market Price (INR).
+- TargetPrice: Conservative target in 3-5 years.
+- StopLoss: 0 (for long term).
+- TimeFrame: e.g., "3-5 Years".
+- PEGRatio: The PEG ratio value (e.g., 1.2).
+- DebtToEquity: The D/E ratio value (e.g., 0.4).
+- BuyAlert: A specific price level to set an alert for accumulation (e.g. 5% lower).
+- Rationale: Audit Note explaining selection AND Macro relevance.
+`;
+
+const TECHNICAL_PROMPT = `
+Act as a Precision Technical Auditor for Indian Markets.
+Filter the "Nifty 200" for the TOP 10 High-Probability Swing Trades.
+We are looking for **Sniper Entries**, not general trends.
+
+${MACRO_CONTEXT_INSTRUCTION}
+
+**PHASE 2: TECHNICAL SCREENING**
+**AUDIT OBJECTIVE**: High Risk:Reward (> 1:3) and confirmed momentum.
+
+**STRICT FILTERS (The Auditor's Checklist):**
+1.  **Momentum**: RSI (14-Day) must be in the "Sweet Spot" (50 to 70). Avoid > 80 (Overbought) unless in "Super Momentum".
+2.  **Volume Confirmation**: Price moves MUST be backed by Volume > 1.5x the 20-day average.
+3.  **Structure**: Clean Breakouts, Re-tests of support, or 20 EMA bounces.
+4.  **Trend**: Stock must be outperforming Nifty 50 Index relative strength.
+
+Requirements:
+1.  Provide a technical market health check summary based on Global Cues.
+2.  **CRITICAL**: Use Google Search to verify EXACT LAST CLOSING PRICE.
+3.  **ALERTS**: Define a specific "Technical Trigger" to watch (e.g. "Alert if Vol > 5M" or "Alert if crosses 1250").
+
+CSV Format:
+\`\`\`csv
+Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,RSI,VolumeAction,TechnicalTrigger,Rationale
+\`\`\`
+- Symbol: NSE Symbol.
+- Name: Company Name.
+- Sector: Industry Sector.
+- CurrentPrice: Exact Latest Close (INR).
+- TargetPrice: Technical Target.
+- StopLoss: Strict Stop Loss level.
+- TimeFrame: e.g., "2-4 Weeks".
+- RSI: Current RSI Value (e.g., 62.5).
+- VolumeAction: e.g., "High Vol Breakout", "2x Avg Vol".
+- TechnicalTrigger: Short text describing the specific alert condition.
+- Rationale: The precise technical trigger.
+`;
+
+const getBacktestPrompt = (period: string, strategy: BacktestStrategy) => {
+  const criteria = strategy === BacktestStrategy.FUNDAMENTAL
+    ? `Criteria (Audited):
+       1. **Undervalued Growth**: PEG Ratio was attractive (< 1.5) exactly ${period} ago.
+       2. **Clean Balance Sheet**: Low Debt-to-Equity at that time.
+       3. **Earnings Quality**: Was showing consistent quarterly profit growth.`
+    : `Criteria (Audited):
+       1. **Volume Breakouts**: Stocks that showed massive volume spikes exactly ${period} ago.
+       2. **RSI Setup**: RSI was crossing 50 or 60 with strength.
+       3. **Pattern**: Clean chart patterns (Cup & Handle, Triangle) visible ${period} ago.`;
+
+  return `
+Act as a Financial Auditor performing a ${strategy} BACKTEST.
+Simulate that we are exactly ${period} in the past.
+Identify 5-8 Indian stocks from the **Nifty 200** universe that met the STRICT AUDIT CRITERIA exactly ${period} ago.
+
+**IMPORTANT**: Do not restrict selection to just the top 50 market cap companies. Scan Nifty 200.
+
+${criteria}
+
+Requirements:
+1. **SEARCH TASK 1**: Find the historical closing price of these stocks on a date exactly ${period} ago (Entry Price).
+2. **SEARCH TASK 2**: Find the CURRENT real-time price of these stocks today (Current Price).
+3. Calculate the Absolute Return % ((Current - Past) / Past * 100).
+
+CSV Format:
+\`\`\`csv
+Symbol,Name,Sector,EntryPrice,CurrentPrice,ReturnPercent,TimeFrame,Rationale
+\`\`\`
+- Symbol: NSE Symbol.
+- Name: Company Name.
+- Sector: Sector.
+- EntryPrice: The historical price ${period} ago (INR).
+- CurrentPrice: Today's price (INR).
+- ReturnPercent: The calculated percentage growth (or loss).
+- TimeFrame: "${period}".
+- Rationale: Why it passed the audit ${period} ago.
+`;
+};
+
+const parseCSVLine = (line: string): string[] => {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === ',' && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result.map(field => field.replace(/^"|"$/g, '').trim());
+};
+
+export const analyzeStocks = async (
+  type: AnalysisType, 
+  backtestPeriod?: string,
+  backtestStrategy?: BacktestStrategy
+): Promise<AnalysisResult> => {
+  if (!process.env.API_KEY) {
+    throw new Error("API Key is missing.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  let prompt = '';
+  if (type === AnalysisType.FUNDAMENTAL) prompt = FUNDAMENTAL_PROMPT;
+  else if (type === AnalysisType.TECHNICAL) prompt = TECHNICAL_PROMPT;
+  else if (type === AnalysisType.BACKTEST && backtestPeriod && backtestStrategy) {
+    prompt = getBacktestPrompt(backtestPeriod, backtestStrategy);
+  }
+  else throw new Error("Invalid analysis configuration");
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        temperature: 0.2, // Lower temperature for more rigorous/factual "Audit" behavior
+      },
+    });
+
+    const text = response.text || "No analysis generated.";
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    
+    // Extract sources
+    const sources = groundingChunks
+      .filter((chunk: any) => chunk.web && chunk.web.uri && chunk.web.title)
+      .map((chunk: any) => ({ uri: chunk.web.uri, title: chunk.web.title }));
+
+    // Parse CSV block
+    const stocks: StockData[] = [];
+    const csvMatch = text.match(/```csv\n([\s\S]*?)\n```/);
+
+    if (csvMatch && csvMatch[1]) {
+      const rows = csvMatch[1].trim().split('\n');
+      // Skip header row
+      for (let i = 1; i < rows.length; i++) {
+        const cols = parseCSVLine(rows[i]);
+
+        if (type === AnalysisType.TECHNICAL) {
+          // Technical Audit CSV: Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,RSI,VolumeAction,TechnicalTrigger,Rationale
+          if (cols.length >= 10) {
+             stocks.push({
+              symbol: cols[0] || "UNKNOWN",
+              name: cols[1] || "Unknown",
+              sector: cols[2] || "General",
+              currentPrice: parseFloat(cols[3].replace(/[^\d.-]/g, '')) || 0,
+              targetPrice: parseFloat(cols[4].replace(/[^\d.-]/g, '')) || 0,
+              stopLoss: parseFloat(cols[5].replace(/[^\d.-]/g, '')) || 0,
+              timeFrame: cols[6] || "Unknown",
+              rsi: parseFloat(cols[7].replace(/[^\d.-]/g, '')) || 0,
+              volumeAction: cols[8] || "-",
+              technicalTrigger: cols[9] || "Watch Price",
+              rationale: cols[10] || "Recommended",
+            });
+          }
+        } else if (type === AnalysisType.BACKTEST) {
+            // Backtest: Symbol,Name,Sector,EntryPrice,CurrentPrice,ReturnPercent,TimeFrame,Rationale
+            if (cols.length >= 7) {
+                stocks.push({
+                  symbol: cols[0] || "UNKNOWN",
+                  name: cols[1] || "Unknown",
+                  sector: cols[2] || "General",
+                  currentPrice: parseFloat(cols[4].replace(/[^\d.-]/g, '')) || 0,
+                  entryPrice: parseFloat(cols[3].replace(/[^\d.-]/g, '')) || 0,
+                  targetPrice: 0, 
+                  returnPercentage: parseFloat(cols[5].replace(/[^\d.-]/g, '')) || 0,
+                  stopLoss: 0,
+                  timeFrame: cols[6] || backtestPeriod || "Past",
+                  rationale: cols[7] || "Backtest result",
+                });
+            }
+        } else {
+          // Fundamental Audit CSV: Symbol,Name,Sector,CurrentPrice,TargetPrice,StopLoss,TimeFrame,PEGRatio,DebtToEquity,BuyAlert,Rationale
+          if (cols.length >= 10) {
+              stocks.push({
+                symbol: cols[0] || "UNKNOWN",
+                name: cols[1] || "Unknown",
+                sector: cols[2] || "General",
+                currentPrice: parseFloat(cols[3].replace(/[^\d.-]/g, '')) || 0,
+                targetPrice: parseFloat(cols[4].replace(/[^\d.-]/g, '')) || 0,
+                stopLoss: parseFloat(cols[5].replace(/[^\d.-]/g, '')) || 0,
+                timeFrame: cols[6] || "Unknown",
+                pegRatio: parseFloat(cols[7].replace(/[^\d.-]/g, '')) || 0,
+                debtToEquity: parseFloat(cols[8].replace(/[^\d.-]/g, '')) || 0,
+                buyAlert: parseFloat(cols[9].replace(/[^\d.-]/g, '')) || 0,
+                rationale: cols[10] || "Recommended",
+              });
+          }
+        }
+      }
+    }
+
+    return {
+      type,
+      summary: text.replace(/```csv[\s\S]*```/, '').trim(),
+      stocks,
+      sources,
+      backtestPeriod,
+      backtestStrategy
+    };
+
+  } catch (error) {
+    console.error("Gemini Analysis Error:", error);
+    throw error;
+  }
+};
